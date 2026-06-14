@@ -23,12 +23,16 @@ export default function App() {
       setGameInit(data);
       setScreen('game');
     });
+    socket.on('room:updated', ({ players }) => {
+      setRoomInfo(prev => prev ? { ...prev, players } : prev);
+    });
     socket.on('error', ({ message }) => alert(message));
 
     return () => {
       socket.off('room:created');
       socket.off('room:joined');
       socket.off('game:started');
+      socket.off('room:updated');
       socket.off('error');
     };
   }, []);
