@@ -177,12 +177,14 @@ io.on('connection', (socket) => {
     const room = rooms.get(socket.roomCode);
     if (!room || room.hostId !== socket.id || room.state !== 'result') return;
 
-    // 破産者チェック
-    const alive = room.players.filter(p => p.coins > 0);
-    if (alive.length <= 1) {
-      room.state = 'over';
-      io.to(room.code).emit('game:over', { players: room.players });
-      return;
+    // 破産者チェック（複数人プレイ時のみ）
+    if (room.players.length > 1) {
+      const alive = room.players.filter(p => p.coins > 0);
+      if (alive.length <= 1) {
+        room.state = 'over';
+        io.to(room.code).emit('game:over', { players: room.players });
+        return;
+      }
     }
 
     room.oyaIndex = (room.oyaIndex + 1) % room.players.length;

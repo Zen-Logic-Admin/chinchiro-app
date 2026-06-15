@@ -43,15 +43,13 @@ export default function LobbyScreen({ roomInfo, setRoomInfo }) {
           {roomInfo.isHost && (
             <button
               onClick={startGame}
-              disabled={roomInfo.players.length < 2}
               style={{
                 ...styles.btn,
-                opacity: roomInfo.players.length < 2 ? 0.4 : 1,
                 background: 'linear-gradient(135deg, #ffd700, #ff8800)',
                 color: '#1a0800',
               }}
             >
-              {roomInfo.players.length < 2 ? '参加者を待っています…' : 'ゲームスタート！'}
+              ゲームスタート！
             </button>
           )}
           {!roomInfo.isHost && (
