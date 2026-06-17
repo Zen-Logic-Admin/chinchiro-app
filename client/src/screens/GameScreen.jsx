@@ -15,6 +15,26 @@ function rand(a, b) { return a + Math.random() * (b - a); }
 
 const NUM_COLORS = ['','#ff3344','#3399ff','#00cc66','#ff8800','#cc44ff','#ffd700'];
 
+const PIP_POS = {
+  1: [[50,50]],
+  2: [[71,27],[29,73]],
+  3: [[71,27],[50,50],[29,73]],
+  4: [[29,27],[71,27],[29,73],[71,73]],
+  5: [[29,27],[71,27],[50,50],[29,73],[71,73]],
+  6: [[29,24],[71,24],[29,50],[71,50],[29,76],[71,76]],
+};
+
+function DiceFace({ face, color, dim }) {
+  const pips = (face && PIP_POS[face]) ? PIP_POS[face] : [];
+  return (
+    <svg width={DIE_S} height={DIE_S} viewBox="0 0 100 100" style={{display:'block',flexShrink:0}}>
+      {pips.map(([cx,cy],i) => (
+        <circle key={i} cx={cx} cy={cy} r={11.5} fill={dim ? '#ccc' : color} opacity={dim ? 0.4 : 1} />
+      ))}
+    </svg>
+  );
+}
+
 const CSS = `
   @keyframes neonPulse {
     0%,100% { text-shadow:0 0 10px #ff1493,0 0 25px #ff1493,0 0 50px #ff1493; }
@@ -184,14 +204,11 @@ function Donburi({ diceState, glowColor, shaking, isEscaping }) {
               willChange:'transform',
               pointerEvents:'none',
             }}>
-              <span style={{
-                fontSize:DIE_S*0.54, fontWeight:900, fontStyle:'italic', lineHeight:1,
-                color:(d.settled && d.face && !d.escaped) ? NUM_COLORS[d.face] : '#ccc',
-                textShadow:d.settled && glowColor && !d.escaped ? `0 0 8px ${glowColor}` : 'none',
-                userSelect:'none',
-              }}>
-                {d.face || '?'}
-              </span>
+              <DiceFace
+                face={d.face}
+                color={(d.settled && !d.escaped && d.face) ? NUM_COLORS[d.face] : '#bbb'}
+                dim={!d.settled || d.escaped}
+              />
             </div>
           );
         })}
