@@ -4,12 +4,12 @@ import { socket } from '../socket.js';
 const BOWL_R      = 130;
 const DIE_S       = 52;
 const DIE_R       = DIE_S * 0.48;
-const GRAVITY     = 0.38;
-const RESTITUTION = 0.54;
-const FRICTION    = 0.974;
-const SPIN_DECAY  = 0.94;
-const SETTLE_V    = 0.65;
-const SETTLE_W    = 0.022;
+const GRAVITY     = 0.92;   // 強め
+const RESTITUTION = 0.36;   // 壁でエネルギーをほぼ失う
+const FRICTION    = 0.94;   // 空気抵抗強め
+const SPIN_DECAY  = 0.86;   // 回転はすぐ落ち着く
+const SETTLE_V    = 1.6;    // 早めに静止
+const SETTLE_W    = 0.07;
 
 function rand(a, b) { return a + Math.random() * (b - a); }
 
@@ -288,13 +288,13 @@ export default function GameScreen({ roomInfo, initialState, onGameOver }) {
           if (dot > 0) {
             d.vx = (d.vx - 2*dot*nx) * RESTITUTION;
             d.vy = (d.vy - 2*dot*ny) * RESTITUTION;
-            d.omega += (d.vx*ny - d.vy*nx) * 0.05;
-            if (Math.abs(dot) > 4) { setBowlShaking(true); setTimeout(()=>setBowlShaking(false),350); }
+            d.omega += (d.vx*ny - d.vy*nx) * 0.08;
+            // 壁に当たった瞬間に目が変わる（転がり感）
+            if (Math.abs(dot) > 1.5) d.face = Math.ceil(Math.random()*6);
+            if (Math.abs(dot) > 5) { setBowlShaking(true); setTimeout(()=>setBowlShaking(false),250); }
           }
           d.x = nx*(R-0.5); d.y = ny*(R-0.5);
         }
-
-        if (Math.random() < 0.12) d.face = Math.ceil(Math.random()*6);
         const spd = Math.sqrt(d.vx*d.vx + d.vy*d.vy);
         if (spd < SETTLE_V && Math.abs(d.omega) < SETTLE_W) {
           d.vx=0; d.vy=0; d.omega=0; d.settled=true;
@@ -322,6 +322,8 @@ export default function GameScreen({ roomInfo, initialState, onGameOver }) {
             const dvx=a.vx-b.vx, dvy=a.vy-b.vy, dot=dvx*nx+dvy*ny;
             a.vx-=dot*nx*RESTITUTION; a.vy-=dot*ny*RESTITUTION;
             b.vx+=dot*nx*RESTITUTION; b.vy+=dot*ny*RESTITUTION;
+            // サイコロ同士が当たったときも目が変わる
+            if (Math.abs(dot) > 1.5) { a.face=Math.ceil(Math.random()*6); b.face=Math.ceil(Math.random()*6); }
           }
         }
       }
@@ -347,10 +349,10 @@ export default function GameScreen({ roomInfo, initialState, onGameOver }) {
     const sy = dist0 > 0.01 ? fromY/dist0*r0 : 0;
 
     dicePhys.current = [0,1,2].map(i => {
-      const spread = (i-1)*0.45;
+      const spread = (i-1)*0.48;
       const toward = Math.atan2(-sy, -sx);
-      const ang = toward + spread + rand(-0.3, 0.3);
-      const spd = rand(8, 14);
+      const ang = toward + spread + rand(-0.28, 0.28);
+      const spd = rand(14, 22);
       return {
         x:sx+rand(-6,6), y:sy+rand(-6,6),
         vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd,
