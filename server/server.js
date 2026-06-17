@@ -45,8 +45,8 @@ function evaluateDice(dice) {
   // 目 (ペア+別の数字)
   if (a === b) return { rank: c, label: `${c}目`, multiplier: 1 };
   if (b === c) return { rank: a, label: `${a}目`, multiplier: 1 };
-  // 役なし
-  return { rank: 0, label: '役なし', reroll: true, multiplier: 1 };
+  // しょんべん（役なし）
+  return { rank: 0, label: 'しょんべん', reroll: true, multiplier: 1 };
 }
 
 // 最大3回振って有効な役を出す
@@ -60,7 +60,7 @@ function rollUntilValid() {
   }
   // 3回とも役なし → 最後のを使う（負け扱い）
   const last = attempts[attempts.length - 1];
-  return { attempts, final: { dice: last.dice, result: { ...last.result, rank: 0, label: '役なし' } } };
+  return { attempts, final: { dice: last.dice, result: { ...last.result, rank: 0, label: 'しょんべん' } } };
 }
 
 // 1vs1の勝敗判定
