@@ -1,22 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 import { socket } from '../socket.js';
 
-// ── 物理定数 ──────────────────────────────
-const BOWL_R    = 120;   // どんぶりの内径 (px)
-const DIE_S     = 54;    // サイコロ一辺
-const DIE_R     = DIE_S * 0.48; // 衝突半径
-const GRAVITY   = 0.36;
-const RESTITUTION = 0.52;
-const FRICTION    = 0.972;
-const SPIN_DECAY  = 0.95;
-const SETTLE_V    = 0.7;
-const SETTLE_W    = 0.025;
+const BOWL_R      = 130;
+const DIE_S       = 52;
+const DIE_R       = DIE_S * 0.48;
+const GRAVITY     = 0.38;
+const RESTITUTION = 0.54;
+const FRICTION    = 0.974;
+const SPIN_DECAY  = 0.94;
+const SETTLE_V    = 0.65;
+const SETTLE_W    = 0.022;
 
 function rand(a, b) { return a + Math.random() * (b - a); }
 
 const NUM_COLORS = ['','#ff3344','#3399ff','#00cc66','#ff8800','#cc44ff','#ffd700'];
 
-// ── CSS ──────────────────────────────────
 const CSS = `
   @keyframes neonPulse {
     0%,100% { text-shadow:0 0 10px #ff1493,0 0 25px #ff1493,0 0 50px #ff1493; }
@@ -31,11 +29,11 @@ const CSS = `
     100% { opacity:0; }
   }
   @keyframes shake {
-    0%,100% { transform:translateX(0); }
-    20% { transform:translateX(-9px) rotate(-3deg); }
-    40% { transform:translateX(9px) rotate(3deg); }
-    60% { transform:translateX(-5px) rotate(-1.5deg); }
-    80% { transform:translateX(5px) rotate(1.5deg); }
+    0%,100% { transform:translate(0,0); }
+    20% { transform:translate(-8px,-3px) rotate(-2deg); }
+    40% { transform:translate(8px,3px) rotate(2deg); }
+    60% { transform:translate(-5px,-2px) rotate(-1deg); }
+    80% { transform:translate(5px,2px) rotate(1deg); }
   }
   @keyframes impactIn {
     0%   { opacity:0; transform:scale(3) rotate(-8deg); filter:blur(6px); }
@@ -43,27 +41,35 @@ const CSS = `
     100% { transform:scale(1) rotate(0); }
   }
   @keyframes slideUp {
-    from { opacity:0; transform:translateY(20px); }
+    from { opacity:0; transform:translateY(14px); }
     to   { opacity:1; transform:translateY(0); }
   }
   @keyframes slideRight {
-    from { opacity:0; transform:translateX(-24px); }
+    from { opacity:0; transform:translateX(-14px); }
     to   { opacity:1; transform:translateX(0); }
-  }
-  @keyframes bowlGlow {
-    0%,100% { box-shadow:inset 0 14px 40px rgba(0,0,0,0.95),0 8px 30px rgba(0,0,0,0.9); }
-    50%     { box-shadow:inset 0 14px 40px rgba(0,0,0,0.95),0 8px 30px rgba(0,0,0,0.9),0 0 40px rgba(255,20,147,0.25); }
   }
   @keyframes shonbenFall {
     0%   { opacity:1; transform:translateY(0) rotate(-15deg) scale(1); }
-    85%  { opacity:0.7; }
-    100% { opacity:0; transform:translateY(140px) rotate(25deg) scale(0.5); }
+    85%  { opacity:0.6; }
+    100% { opacity:0; transform:translateY(150px) rotate(30deg) scale(0.4); }
   }
   @keyframes shonbenText {
     0%   { opacity:0; transform:scale(0.4) rotate(-8deg); }
-    25%  { opacity:1; transform:scale(1.12) rotate(3deg); }
+    25%  { opacity:1; transform:scale(1.1) rotate(2deg); }
     70%  { opacity:1; transform:scale(1); }
-    100% { opacity:0; transform:scale(0.85) translateY(-20px); }
+    100% { opacity:0; transform:scale(0.85) translateY(-24px); }
+  }
+  @keyframes tapHint {
+    0%,100% { opacity:0.2; }
+    50%     { opacity:0.5; }
+  }
+  @keyframes ripple {
+    0%   { transform:scale(0); opacity:0.5; }
+    100% { transform:scale(5); opacity:0; }
+  }
+  @keyframes fadeIn {
+    from { opacity:0; }
+    to   { opacity:1; }
   }
 `;
 
@@ -74,11 +80,10 @@ const DROPS = [
   {x:66,delay:0.13,size:22},{x:44,delay:0.30,size:20},{x:88,delay:0.02,size:26},
 ];
 
-// ── ResultLabel ───────────────────────────
 function ResultLabel({ label }) {
   if (!label) return null;
   if (label === 'ピンゾロ') return (
-    <div style={{fontSize:34,fontWeight:900,letterSpacing:4,color:'#fff',animation:'neonPulse 0.7s ease-in-out infinite,impactIn 0.4s ease-out',textAlign:'center'}}>
+    <div style={{fontSize:32,fontWeight:900,letterSpacing:4,color:'#fff',animation:'neonPulse 0.7s ease-in-out infinite,impactIn 0.4s ease-out',textAlign:'center'}}>
       ✨ピンゾロ✨
     </div>
   );
@@ -93,23 +98,27 @@ function ResultLabel({ label }) {
     </div>
   );
   if (label === 'しょんべん') return (
-    <div style={{fontSize:20,fontWeight:900,color:'#88ccff',letterSpacing:2,animation:'impactIn 0.35s ease-out',textAlign:'center',textShadow:'0 0 10px rgba(136,204,255,0.4)'}}>
+    <div style={{fontSize:22,fontWeight:900,color:'#6699bb',letterSpacing:2,animation:'impactIn 0.35s ease-out',textAlign:'center',textShadow:'0 0 12px rgba(102,153,187,0.5)'}}>
       しょんべん 💦
     </div>
   );
   if (label.includes('ゾロ目')) return (
-    <div style={{fontSize:24,fontWeight:900,color:'#ffd700',letterSpacing:2,animation:'impactIn 0.4s ease-out',textAlign:'center',textShadow:'0 0 14px rgba(255,215,0,0.5)'}}>
+    <div style={{fontSize:24,fontWeight:900,color:'#ffd700',letterSpacing:2,animation:'impactIn 0.4s ease-out',textAlign:'center',textShadow:'0 0 16px rgba(255,215,0,0.5)'}}>
       {label}!
     </div>
   );
-  return <div style={{fontSize:18,fontWeight:900,color:'#666',animation:'impactIn 0.35s ease-out',textAlign:'center'}}>{label}</div>;
+  return (
+    <div style={{fontSize:20,fontWeight:900,color:'#999',animation:'impactIn 0.35s ease-out',textAlign:'center',letterSpacing:1}}>
+      {label}
+    </div>
+  );
 }
 
 function getGlowColor(label) {
   if (label === 'ピンゾロ')      return '#ff1493';
   if (label === 'シゴロ')        return '#00e5ff';
   if (label === 'ヒフミ')        return '#00e5ff';
-  if (label === 'しょんべん')    return '#88ccff';
+  if (label === 'しょんべん')    return '#4477aa';
   if (label?.includes('ゾロ目')) return '#ffd700';
   return null;
 }
@@ -119,118 +128,115 @@ function ShonbenOverlay({ name }) {
   return (
     <div style={{position:'fixed',inset:0,zIndex:260,pointerEvents:'none',overflow:'hidden'}}>
       {DROPS.map((d,i) => (
-        <div key={i} style={{position:'absolute',left:`${d.x}%`,top:'-8%',fontSize:d.size,animation:`shonbenFall 0.95s ease-in ${d.delay}s forwards`}}>💦</div>
+        <div key={i} style={{position:'absolute',left:`${d.x}%`,top:'-8%',fontSize:d.size,animation:`shonbenFall 1s ease-in ${d.delay}s forwards`}}>💦</div>
       ))}
       <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
-        <div style={{fontSize:26,fontWeight:900,color:'#00e5ff',textShadow:'0 0 24px #00e5ff',animation:'shonbenText 2s ease-out forwards',textAlign:'center',background:'rgba(0,0,0,0.8)',padding:'12px 26px',borderRadius:14,border:'1px solid rgba(0,229,255,0.3)',lineHeight:1.6}}>
-          {name}<br/><span style={{fontSize:17}}>しょんべん 💦</span>
+        <div style={{fontSize:24,fontWeight:900,color:'#88bbdd',textShadow:'0 0 20px rgba(136,187,221,0.8)',animation:'shonbenText 2.2s ease-out forwards',textAlign:'center',background:'rgba(0,0,0,0.88)',padding:'16px 30px',borderRadius:18,border:'1px solid rgba(136,187,221,0.2)',lineHeight:1.7}}>
+          {name}<br/><span style={{fontSize:17,color:'#6699bb'}}>しょんべん 💦</span>
         </div>
       </div>
     </div>
   );
 }
 
-// ── どんぶりコンポーネント ───────────────
-function Donburi({ diceState, glowColor, shaking, onPress, interactive, showHint }) {
+function Donburi({ diceState, glowColor, shaking, isEscaping }) {
   const diameter = BOWL_R * 2 + 20;
   return (
-    <div
-      onPointerDown={interactive ? onPress : undefined}
-      style={{
-        position: 'relative',
-        width: diameter, height: diameter,
-        borderRadius: '50%',
-        flexShrink: 0,
-        cursor: interactive ? 'pointer' : 'default',
-        background: glowColor
-          ? `radial-gradient(ellipse at 32% 32%, ${glowColor}18 0%, #0d0d1a 55%, #020208 100%)`
-          : 'radial-gradient(ellipse at 32% 32%, #1c1c32 0%, #0d0d1a 55%, #020208 100%)',
-        border: glowColor ? `7px solid ${glowColor}bb` : '7px solid #1e1a38',
-        boxShadow: glowColor
-          ? `inset 0 14px 42px rgba(0,0,0,0.95), inset 0 -4px 14px rgba(255,255,255,0.02), 0 8px 32px rgba(0,0,0,0.95), 0 0 32px ${glowColor}44`
-          : 'inset 0 14px 42px rgba(0,0,0,0.95), inset 0 -4px 14px rgba(255,255,255,0.02), 0 8px 32px rgba(0,0,0,0.9)',
-        transition: 'border-color 0.4s, box-shadow 0.4s, background 0.4s',
-        transform: shaking ? `translate(${Math.sin(Date.now()*0.1)*5}px,${Math.cos(Date.now()*0.13)*4}px)` : 'none',
-        userSelect: 'none',
-        WebkitUserSelect: 'none',
-      }}
-    >
-      {/* Rim highlight */}
-      <div style={{position:'absolute',top:6,left:6,right:6,bottom:6,borderRadius:'50%',border:'1px solid rgba(255,255,255,0.04)',pointerEvents:'none'}} />
+    <div style={{
+      position:'relative',
+      width:diameter, height:diameter,
+      borderRadius:'50%',
+      flexShrink:0,
+      background: glowColor
+        ? `radial-gradient(ellipse at 30% 28%, ${glowColor}1e 0%, #0e0e1e 50%, #020208 100%)`
+        : 'radial-gradient(ellipse at 30% 28%, #1e1e36 0%, #0e0e1e 50%, #020208 100%)',
+      border: glowColor ? `6px solid ${glowColor}cc` : '6px solid #181628',
+      boxShadow: glowColor
+        ? `inset 0 18px 52px rgba(0,0,0,0.97), inset 0 -2px 10px rgba(255,255,255,0.02), 0 10px 44px rgba(0,0,0,0.95), 0 0 44px ${glowColor}44`
+        : 'inset 0 18px 52px rgba(0,0,0,0.97), inset 0 -2px 10px rgba(255,255,255,0.02), 0 10px 44px rgba(0,0,0,0.92)',
+      transition:'border-color 0.5s, box-shadow 0.5s, background 0.5s',
+      animation: shaking ? 'shake 0.35s ease-out' : 'none',
+      userSelect:'none', WebkitUserSelect:'none',
+    }}>
+      {/* Rim rings */}
+      <div style={{position:'absolute',top:6,left:6,right:6,bottom:6,borderRadius:'50%',border:'1px solid rgba(255,255,255,0.055)',pointerEvents:'none'}} />
+      <div style={{position:'absolute',top:11,left:11,right:11,bottom:11,borderRadius:'50%',border:'1px solid rgba(0,0,0,0.5)',pointerEvents:'none'}} />
 
-      {/* Dice (positioned relative to bowl center) */}
-      <div style={{position:'absolute',inset:0,borderRadius:'50%',overflow:'hidden'}}>
-        {diceState.map((d, i) => (
-          <div key={i} style={{
-            position: 'absolute',
-            left: d.x + BOWL_R + 10 - DIE_S/2,
-            top:  d.y + BOWL_R + 10 - DIE_S/2,
-            width: DIE_S, height: DIE_S,
-            borderRadius: DIE_S * 0.2,
-            background: '#fff',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transform: `rotate(${d.angle}rad)`,
-            boxShadow: d.settled && glowColor
-              ? `0 0 16px ${glowColor}, 0 0 32px ${glowColor}55, 0 3px 10px rgba(0,0,0,0.9)`
-              : '0 3px 10px rgba(0,0,0,0.9)',
-            willChange: 'transform',
-            pointerEvents: 'none',
-          }}>
-            <span style={{
-              fontSize: DIE_S * 0.56,
-              fontWeight: 900,
-              fontStyle: 'italic',
-              lineHeight: 1,
-              color: (d.settled && d.face) ? NUM_COLORS[d.face] : '#bbb',
-              textShadow: d.settled && glowColor ? `0 0 8px ${glowColor}` : 'none',
-              userSelect: 'none',
+      {/* Dice layer — overflow:visible when escaping */}
+      <div style={{position:'absolute',inset:0,borderRadius:'50%',overflow:isEscaping?'visible':'hidden'}}>
+        {diceState.map((d,i) => {
+          const distFromCenter = Math.sqrt(d.x*d.x + d.y*d.y);
+          const opacity = d.escaped ? Math.max(0, 1 - (distFromCenter - BOWL_R) / 100) : 1;
+          return (
+            <div key={i} style={{
+              position:'absolute',
+              left: d.x + BOWL_R + 10 - DIE_S/2,
+              top:  d.y + BOWL_R + 10 - DIE_S/2,
+              width:DIE_S, height:DIE_S,
+              borderRadius: DIE_S * 0.17,
+              background:'#fff',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              transform:`rotate(${d.angle}rad)`,
+              opacity,
+              boxShadow: d.settled && glowColor && !d.escaped
+                ? `0 0 18px ${glowColor}, 0 0 36px ${glowColor}44, 0 4px 12px rgba(0,0,0,0.9)`
+                : '0 4px 14px rgba(0,0,0,0.9)',
+              willChange:'transform',
+              pointerEvents:'none',
             }}>
-              {d.face || '?'}
-            </span>
-          </div>
-        ))}
+              <span style={{
+                fontSize:DIE_S*0.54, fontWeight:900, fontStyle:'italic', lineHeight:1,
+                color:(d.settled && d.face && !d.escaped) ? NUM_COLORS[d.face] : '#ccc',
+                textShadow:d.settled && glowColor && !d.escaped ? `0 0 8px ${glowColor}` : 'none',
+                userSelect:'none',
+              }}>
+                {d.face || '?'}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Empty hint */}
-      {showHint && (
-        <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:6,pointerEvents:'none'}}>
-          <div style={{fontSize:30,opacity:0.12}}>🎲</div>
-          {interactive && <div style={{fontSize:10,color:'#222',letterSpacing:3}}>TAP TO ROLL</div>}
+      {diceState.length === 0 && (
+        <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}>
+          <div style={{fontSize:38,opacity:0.06}}>🎲</div>
         </div>
       )}
     </div>
   );
 }
 
-// ── メインコンポーネント ──────────────────
 export default function GameScreen({ roomInfo, initialState, onGameOver }) {
-  const [players, setPlayers]         = useState(initialState.players);
-  const [oyaId, setOyaId]             = useState(initialState.oyaId);
-  const [round, setRound]             = useState(initialState.round || 1);
-  const [phase, setPhase]             = useState('betting');
-  const [myBet, setMyBet]             = useState(10);
-  const [isHost, setIsHost]           = useState(roomInfo.isHost);
-  const [roundResult, setRoundResult] = useState(null);
-  const [revealStep, setRevealStep]   = useState(0);
+  const [players, setPlayers]           = useState(initialState.players);
+  const [oyaId, setOyaId]               = useState(initialState.oyaId);
+  const [round, setRound]               = useState(initialState.round || 1);
+  const [phase, setPhase]               = useState('betting');
+  const [myBet, setMyBet]               = useState(10);
+  const [isHost, setIsHost]             = useState(roomInfo.isHost);
+  const [roundResult, setRoundResult]   = useState(null);
+  const [revealStep, setRevealStep]     = useState(0);
   const [gameOverData, setGameOverData] = useState(null);
   const [pinzoroBlast, setPinzoroBlast] = useState(false);
   const [shonbenName, setShonbenName]   = useState(null);
   const [bowlShaking, setBowlShaking]   = useState(false);
-  const [bowlKey, setBowlKey]           = useState('oya'); // which result is shown
+  const [bowlKey, setBowlKey]           = useState('oya');
   const [diceRender, setDiceRender]     = useState([]);
+  const [isEscaping, setIsEscaping]     = useState(false);
+  const [ripples, setRipples]           = useState([]);
 
-  const isHostRef = useRef(roomInfo.isHost);
-  const myId = socket.id;
-  const me   = players.find(p => p.id === myId) || players[0];
-  const oya  = players.find(p => p.id === oyaId);
-  const isOya   = myId === oyaId;
-  const myCoins = me?.coins ?? 0;
-  const sorted  = [...players].sort((a,b) => b.coins - a.coins);
+  const bowlRef    = useRef(null);
+  const dicePhys   = useRef([]);
+  const rafId      = useRef(null);
+  const settled    = useRef(true);
+  const escaping   = useRef(false);
+  const isHostRef  = useRef(roomInfo.isHost);
 
-  // Physics refs
-  const dicePhys = useRef([]);
-  const rafId    = useRef(null);
-  const settled  = useRef(true);
+  const myId     = socket.id;
+  const me       = players.find(p => p.id === myId) || players[0];
+  const oya      = players.find(p => p.id === oyaId);
+  const isOya    = myId === oyaId;
+  const myCoins  = me?.coins ?? 0;
+  const sorted   = [...players].sort((a,b) => b.coins - a.coins);
 
   function stopPhysics() {
     if (rafId.current) { cancelAnimationFrame(rafId.current); rafId.current = null; }
@@ -238,10 +244,9 @@ export default function GameScreen({ roomInfo, initialState, onGameOver }) {
 
   function triggerShonben(name) {
     setShonbenName(name);
-    setTimeout(() => setShonbenName(null), 2200);
+    setTimeout(() => setShonbenName(null), 2400);
   }
 
-  // Physics tick function (stored in ref to avoid stale closures)
   const tickRef = useRef(null);
   tickRef.current = function tick() {
     const dice = dicePhys.current;
@@ -254,67 +259,58 @@ export default function GameScreen({ roomInfo, initialState, onGameOver }) {
       allDone = false;
 
       d.vy += GRAVITY;
-      d.x  += d.vx;
-      d.y  += d.vy;
+      d.x  += d.vx; d.y += d.vy;
       d.angle += d.omega;
-      d.vx    *= FRICTION;
-      d.vy    *= FRICTION;
-      d.omega *= SPIN_DECAY;
+      d.vx *= FRICTION; d.vy *= FRICTION; d.omega *= SPIN_DECAY;
 
-      // Circular bowl wall
-      const dist = Math.sqrt(d.x*d.x + d.y*d.y);
-      if (dist > R) {
-        const nx = d.x/dist, ny = d.y/dist;
-        const dot = d.vx*nx + d.vy*ny;
-        if (dot > 0) {
-          d.vx = (d.vx - 2*dot*nx) * RESTITUTION;
-          d.vy = (d.vy - 2*dot*ny) * RESTITUTION;
-          d.omega += (d.vx*ny - d.vy*nx) * 0.05;
-          // Bowl shake on hard hit
-          if (Math.abs(dot) > 4) {
-            setBowlShaking(true);
-            setTimeout(() => setBowlShaking(false), 300);
+      if (!escaping.current) {
+        const dist = Math.sqrt(d.x*d.x + d.y*d.y);
+        if (dist > R) {
+          const nx = d.x/dist, ny = d.y/dist;
+          const dot = d.vx*nx + d.vy*ny;
+          if (dot > 0) {
+            d.vx = (d.vx - 2*dot*nx) * RESTITUTION;
+            d.vy = (d.vy - 2*dot*ny) * RESTITUTION;
+            d.omega += (d.vx*ny - d.vy*nx) * 0.05;
+            if (Math.abs(dot) > 4) { setBowlShaking(true); setTimeout(()=>setBowlShaking(false),350); }
           }
+          d.x = nx*(R-0.5); d.y = ny*(R-0.5);
         }
-        d.x = nx * (R - 0.5);
-        d.y = ny * (R - 0.5);
-      }
 
-      // Random face spin during roll
-      if (Math.random() < 0.12) d.face = Math.ceil(Math.random() * 6);
-
-      const spd = Math.sqrt(d.vx*d.vx + d.vy*d.vy);
-      if (spd < SETTLE_V && Math.abs(d.omega) < SETTLE_W) {
-        d.vx = 0; d.vy = 0; d.omega = 0;
-        d.settled = true;
+        if (Math.random() < 0.12) d.face = Math.ceil(Math.random()*6);
+        const spd = Math.sqrt(d.vx*d.vx + d.vy*d.vy);
+        if (spd < SETTLE_V && Math.abs(d.omega) < SETTLE_W) {
+          d.vx=0; d.vy=0; d.omega=0; d.settled=true;
+        } else {
+          allDone = false;
+        }
       } else {
+        // escape mode: no wall, mark escaped when outside
+        const dist = Math.sqrt(d.x*d.x + d.y*d.y);
+        if (dist > BOWL_R) d.escaped = true;
         allDone = false;
       }
     }
 
-    // Die-die collision
-    for (let i = 0; i < dice.length; i++) {
-      for (let j = i+1; j < dice.length; j++) {
-        const a = dice[i], b = dice[j];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const d2 = dx*dx + dy*dy;
-        const minD = DIE_R * 2;
-        if (d2 < minD*minD && d2 > 0.01) {
-          const d = Math.sqrt(d2);
-          const nx = dx/d, ny = dy/d;
-          const ov = (minD - d) * 0.5;
-          a.x -= nx*ov; a.y -= ny*ov;
-          b.x += nx*ov; b.y += ny*ov;
-          const dvx = a.vx - b.vx, dvy = a.vy - b.vy;
-          const dot = dvx*nx + dvy*ny;
-          a.vx -= dot*nx*RESTITUTION; a.vy -= dot*ny*RESTITUTION;
-          b.vx += dot*nx*RESTITUTION; b.vy += dot*ny*RESTITUTION;
+    // Die-die collision (normal mode only)
+    if (!escaping.current) {
+      for (let i=0; i<dice.length; i++) {
+        for (let j=i+1; j<dice.length; j++) {
+          const a=dice[i], b=dice[j];
+          if (a.settled && b.settled) continue;
+          const dx=b.x-a.x, dy=b.y-a.y, d2=dx*dx+dy*dy, minD=DIE_R*2;
+          if (d2<minD*minD && d2>0.01) {
+            const dd=Math.sqrt(d2), nx=dx/dd, ny=dy/dd, ov=(minD-dd)*0.5;
+            a.x-=nx*ov; a.y-=ny*ov; b.x+=nx*ov; b.y+=ny*ov;
+            const dvx=a.vx-b.vx, dvy=a.vy-b.vy, dot=dvx*nx+dvy*ny;
+            a.vx-=dot*nx*RESTITUTION; a.vy-=dot*ny*RESTITUTION;
+            b.vx+=dot*nx*RESTITUTION; b.vy+=dot*ny*RESTITUTION;
+          }
         }
       }
     }
 
     setDiceRender(dice.map(d => ({...d})));
-
     if (!allDone) {
       rafId.current = requestAnimationFrame(() => tickRef.current());
     } else {
@@ -322,124 +318,201 @@ export default function GameScreen({ roomInfo, initialState, onGameOver }) {
     }
   };
 
-  function launchDice(fromX, fromY, finalFaces) {
-    // fromX/fromY: relative to bowl center
+  function launchDice(fromX, fromY) {
     stopPhysics();
     settled.current = false;
+    escaping.current = false;
+    setIsEscaping(false);
     const R = BOWL_R - DIE_R;
-    // clamp start to inside bowl
     const dist0 = Math.sqrt(fromX*fromX + fromY*fromY);
-    const r0 = Math.min(dist0, R * 0.85);
+    const r0 = Math.min(dist0, R * 0.82);
     const sx = dist0 > 0.01 ? fromX/dist0*r0 : 0;
     const sy = dist0 > 0.01 ? fromY/dist0*r0 : 0;
 
     dicePhys.current = [0,1,2].map(i => {
-      const spread = (i-1) * 0.45;
-      const towardCenter = Math.atan2(-sy, -sx);
-      const ang = towardCenter + spread + rand(-0.35, 0.35);
-      const spd = rand(7, 12);
+      const spread = (i-1)*0.45;
+      const toward = Math.atan2(-sy, -sx);
+      const ang = toward + spread + rand(-0.3, 0.3);
+      const spd = rand(8, 14);
       return {
-        x: sx + rand(-6,6), y: sy + rand(-6,6),
-        vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd,
-        angle: rand(0, Math.PI*2),
-        omega: rand(-0.35, 0.35),
-        face: Math.ceil(Math.random()*6),
-        settled: false,
-        _final: finalFaces?.[i] ?? null,
+        x:sx+rand(-6,6), y:sy+rand(-6,6),
+        vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd,
+        angle:rand(0,Math.PI*2), omega:rand(-0.4,0.4),
+        face:Math.ceil(Math.random()*6),
+        settled:false, escaped:false,
       };
     });
-    setDiceRender(dicePhys.current.map(d => ({...d})));
+    setDiceRender(dicePhys.current.map(d=>({...d})));
     rafId.current = requestAnimationFrame(() => tickRef.current());
+  }
+
+  // Launch dice outward — used for しょんべん reveal
+  function launchEscape() {
+    stopPhysics();
+    escaping.current = true;
+    setIsEscaping(true);
+
+    // If no dice exist yet, create them at center
+    if (dicePhys.current.length === 0) {
+      dicePhys.current = [0,1,2].map(i => ({
+        x:rand(-12,12), y:rand(-12,12),
+        vx:0, vy:0, angle:rand(0,Math.PI*2), omega:0,
+        face:Math.ceil(Math.random()*6),
+        settled:false, escaped:false,
+      }));
+    }
+
+    const baseAngle = rand(0, Math.PI*2);
+    dicePhys.current = dicePhys.current.map((d,i) => {
+      const a = baseAngle + (i/3)*Math.PI*2 + rand(-0.25,0.25);
+      const spd = rand(14, 22);
+      return { ...d, settled:false, escaped:false, vx:Math.cos(a)*spd, vy:Math.sin(a)*spd-3, omega:rand(-0.8,0.8) };
+    });
+    setDiceRender(dicePhys.current.map(d=>({...d})));
+    rafId.current = requestAnimationFrame(() => tickRef.current());
+
+    setTimeout(() => {
+      stopPhysics();
+      dicePhys.current = [];
+      setDiceRender([]);
+      escaping.current = false;
+      setIsEscaping(false);
+    }, 900);
   }
 
   function settleDice(faces) {
     stopPhysics();
-    dicePhys.current = dicePhys.current.map((d, i) => ({
-      ...d, settled: true, face: faces[i],
-      vx: 0, vy: 0, omega: 0,
-    }));
-    setDiceRender(dicePhys.current.map(d => ({...d})));
+    escaping.current = false;
+    setIsEscaping(false);
+    if (dicePhys.current.length === 0) {
+      dicePhys.current = [0,1,2].map((_, i) => ({
+        x:(i-1)*DIE_R*2.4, y:0, vx:0, vy:0,
+        angle:rand(0,Math.PI*2), omega:0,
+        face:faces[i], settled:true, escaped:false,
+      }));
+    } else {
+      dicePhys.current = dicePhys.current.map((d,i) => ({
+        ...d, settled:true, face:faces[i], vx:0, vy:0, omega:0, escaped:false,
+      }));
+    }
+    setDiceRender(dicePhys.current.map(d=>({...d})));
     settled.current = true;
   }
 
   function scatterThenSettle(faces, delay) {
-    // Small scatter animation then settle
-    dicePhys.current = dicePhys.current.map(d => ({
-      ...d, settled: false,
-      vx: rand(-4,4), vy: rand(-3,3),
-      omega: rand(-0.2, 0.2),
-      face: Math.ceil(Math.random()*6),
-    }));
+    if (dicePhys.current.length === 0) {
+      dicePhys.current = [0,1,2].map((_, i) => ({
+        x:rand(-20,20), y:rand(-20,20), vx:rand(-4,4), vy:rand(-3,3),
+        angle:rand(0,Math.PI*2), omega:rand(-0.2,0.2),
+        face:Math.ceil(Math.random()*6), settled:false, escaped:false,
+      }));
+    } else {
+      dicePhys.current = dicePhys.current.map(d => ({
+        ...d, settled:false, vx:rand(-4,4), vy:rand(-3,3),
+        omega:rand(-0.2,0.2), face:Math.ceil(Math.random()*6), escaped:false,
+      }));
+    }
+    escaping.current = false;
+    setIsEscaping(false);
     settled.current = false;
     stopPhysics();
     rafId.current = requestAnimationFrame(() => tickRef.current());
-    setTimeout(() => {
-      settleDice(faces);
-    }, delay);
+    setTimeout(() => settleDice(faces), delay);
   }
 
-  // ── Socket ──────────────────────────────
+  // Show dice statically (for result-row tap)
+  function showDiceStatic(faces) {
+    stopPhysics();
+    escaping.current = false;
+    setIsEscaping(false);
+    dicePhys.current = [0,1,2].map((_, i) => ({
+      x:(i-1)*DIE_R*2.4, y: i===1 ? -8 : 4, vx:0, vy:0,
+      angle:rand(0,Math.PI*2), omega:0,
+      face:faces[i], settled:true, escaped:false,
+    }));
+    setDiceRender(dicePhys.current.map(d=>({...d})));
+    settled.current = true;
+  }
+
+  // ── Socket ──────────────────────────────────────────────────
   useEffect(() => {
-    socket.on('bet:updated', ({ players: p }) => setPlayers(p));
+    socket.on('bet:updated', ({ players:p }) => setPlayers(p));
 
     socket.on('round:result', (data) => {
       setRoundResult(data);
 
-      // OYA dice reveal after physics (1.6s from roll)
       setTimeout(() => {
-        stopPhysics();
-        settleDice(data.oyaDice);
-        setRevealStep(1);
         setBowlKey('oya');
+        const oyaShonben = data.oyaResult.label === 'しょんべん';
 
-        if (data.oyaResult.label === 'ピンゾロ') {
-          setPinzoroBlast(true); setTimeout(() => setPinzoroBlast(false), 950);
-        } else if (data.oyaResult.label === 'ヒフミ') {
-          setTimeout(() => triggerShonben(data.oyaName), 350);
+        if (oyaShonben) {
+          launchEscape();
+          setTimeout(() => {
+            setRevealStep(1);
+            triggerShonben(data.oyaName);
+          }, 500);
+        } else {
+          settleDice(data.oyaDice);
+          setRevealStep(1);
+          if (data.oyaResult.label === 'ピンゾロ') {
+            setPinzoroBlast(true); setTimeout(()=>setPinzoroBlast(false),950);
+          } else if (data.oyaResult.label === 'ヒフミ') {
+            setTimeout(()=>triggerShonben(data.oyaName),350);
+          }
         }
 
-        // Each KO
-        for (let i = 0; i < data.battles.length; i++) {
-          const t = 1000 + i * 1100;
+        for (let i=0; i<data.battles.length; i++) {
+          const t = 1000 + i*1200;
           setTimeout(() => {
             const b = data.battles[i];
             setBowlKey(b.playerId);
-            scatterThenSettle(b.dice, 600);
-            setTimeout(() => {
-              setRevealStep(i + 2);
-              if (b.result.label === 'ピンゾロ') {
-                setPinzoroBlast(true); setTimeout(() => setPinzoroBlast(false), 950);
-              } else if (b.result.label === 'ヒフミ') {
-                setTimeout(() => triggerShonben(b.playerName), 350);
-              }
-            }, 620);
+            const isShonben = b.result.label === 'しょんべん';
+
+            if (isShonben) {
+              launchEscape();
+              setTimeout(() => {
+                setRevealStep(i+2);
+                triggerShonben(b.playerName);
+              }, 500);
+            } else {
+              scatterThenSettle(b.dice, 550);
+              setTimeout(() => {
+                setRevealStep(i+2);
+                if (b.result.label === 'ピンゾロ') {
+                  setPinzoroBlast(true); setTimeout(()=>setPinzoroBlast(false),950);
+                } else if (b.result.label === 'ヒフミ') {
+                  setTimeout(()=>triggerShonben(b.playerName),350);
+                }
+              }, 570);
+            }
           }, t);
         }
 
         setTimeout(() => {
           setPlayers(data.players);
           setPhase('result');
-        }, 1000 + data.battles.length * 1100 + 700);
+        }, 1000 + data.battles.length*1200 + 700);
       }, 1600);
     });
 
-    socket.on('round:next', ({ oyaId: o, players: p, round: r }) => {
+    socket.on('round:next', ({ oyaId:o, players:p, round:r }) => {
       stopPhysics();
       setOyaId(o); setPlayers(p); setRound(r);
       setPhase('betting'); setRoundResult(null); setRevealStep(0); setBowlKey('oya');
       dicePhys.current = []; setDiceRender([]);
-      const mp = p.find(pl => pl.id === myId);
-      if (mp) setMyBet(prev => Math.min(prev, mp.coins || 1));
+      escaping.current = false; setIsEscaping(false);
+      const mp = p.find(pl=>pl.id===myId);
+      if (mp) setMyBet(prev=>Math.min(prev,mp.coins||1));
     });
 
-    socket.on('game:over', ({ players: p }) => {
+    socket.on('game:over', ({ players:p }) => {
       stopPhysics();
-      setGameOverData([...p].sort((a,b) => b.coins - a.coins));
+      setGameOverData([...p].sort((a,b)=>b.coins-a.coins));
       setPhase('over');
     });
 
-    socket.on('room:updated', ({ players: p }) => setPlayers(p));
-    socket.on('host:changed', ({ hostId, players: p }) => {
+    socket.on('room:updated', ({ players:p }) => setPlayers(p));
+    socket.on('host:changed', ({ hostId, players:p }) => {
       const nowHost = socket.id === hostId;
       isHostRef.current = nowHost;
       setIsHost(nowHost);
@@ -449,137 +522,189 @@ export default function GameScreen({ roomInfo, initialState, onGameOver }) {
     return () => {
       stopPhysics();
       ['bet:updated','round:result','round:next','game:over','room:updated','host:changed']
-        .forEach(e => socket.off(e));
+        .forEach(e=>socket.off(e));
     };
   }, [myId]);
 
   function sendBet(v) {
     const c = Math.max(1, Math.min(v, myCoins));
     setMyBet(c);
-    socket.emit('bet:set', { amount: c });
+    socket.emit('bet:set', { amount:c });
   }
 
-  function handleRoll(e) {
+  function handleScreenTap(e) {
     if (!isHost || phase !== 'betting') return;
     e.preventDefault();
 
-    // Compute touch position relative to the element's center
-    const el = e.currentTarget;
-    const rect = el.getBoundingClientRect();
-    const cx = rect.left + rect.width/2;
-    const cy = rect.top  + rect.height/2;
-    const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? cx;
-    const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? cy;
-    const px = clientX - cx;
-    const py = clientY - cy;
+    const clientX = e.clientX ?? e.touches?.[0]?.clientX;
+    const clientY = e.clientY ?? e.touches?.[0]?.clientY;
+    if (clientX == null) return;
 
-    launchDice(px, py, null);
+    // Ripple at tap point
+    const rect = e.currentTarget.getBoundingClientRect();
+    const rid = Date.now();
+    setRipples(prev=>[...prev.slice(-4),{x:clientX-rect.left,y:clientY-rect.top,id:rid}]);
+    setTimeout(()=>setRipples(prev=>prev.filter(r=>r.id!==rid)),600);
+
+    // Bowl-relative coordinates
+    let px=0, py=0;
+    if (bowlRef.current) {
+      const br = bowlRef.current.getBoundingClientRect();
+      px = clientX - (br.left + br.width/2);
+      py = clientY - (br.top  + br.height/2);
+    }
+
+    launchDice(px, py);
     socket.emit('round:roll');
     setPhase('rolling');
   }
 
-  // ── What to show in bowl ──
-  let bowlGlow = null, bowlLabel = null, bowlWho = '';
-  if (revealStep >= 1 && roundResult) {
-    if (bowlKey === 'oya') {
+  // ── Bowl display state ──
+  let bowlGlow=null, bowlLabel=null, bowlWho='';
+  if (revealStep>=1 && roundResult) {
+    if (bowlKey==='oya') {
       bowlLabel = roundResult.oyaResult.label;
       bowlWho   = roundResult.oyaName;
       bowlGlow  = getGlowColor(bowlLabel);
     } else {
-      const b = roundResult.battles.find(x => x.playerId === bowlKey);
-      if (b) { bowlLabel = b.result.label; bowlWho = b.playerName; bowlGlow = getGlowColor(b.result.label); }
+      const b = roundResult.battles.find(x=>x.playerId===bowlKey);
+      if (b) { bowlLabel=b.result.label; bowlWho=b.playerName; bowlGlow=getGlowColor(b.result.label); }
     }
   }
 
-  // ── GAME OVER ─────────────────────────
-  if (phase === 'over' && gameOverData) {
+  const canTap = isHost && phase==='betting';
+
+  // ── GAME OVER ──────────────────────────────────────────────
+  if (phase==='over' && gameOverData) {
     return (
-      <div style={{minHeight:'100dvh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:14,padding:'32px 20px',background:'#0a0a0f'}}>
+      <div style={{minHeight:'100dvh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:16,padding:'40px 20px',background:'#0a0a0f'}}>
         <style>{CSS}</style>
-        <div style={{fontSize:32,fontWeight:900,color:'#ff1493',letterSpacing:4,animation:'neonPulse 1s ease-in-out infinite'}}>RESULT</div>
-        <div style={{width:'100%',maxWidth:360,display:'flex',flexDirection:'column',gap:10}}>
-          {gameOverData.map((p,i) => (
-            <div key={p.id} style={{display:'flex',alignItems:'center',gap:14,padding:'16px 20px',background:i===0?'rgba(255,20,147,0.12)':'rgba(255,255,255,0.04)',borderRadius:14,border:i===0?'1px solid rgba(255,20,147,0.5)':'1px solid rgba(255,255,255,0.07)',animation:`slideUp 0.4s ease-out ${i*0.12}s both`}}>
-              <div style={{fontSize:i===0?32:22,minWidth:38,textAlign:'center'}}>{i===0?'🏆':i===1?'🥈':i===2?'🥉':`${i+1}位`}</div>
-              <div style={{flex:1,fontSize:18,color:'#fff',fontWeight:i===0?900:'normal'}}>{p.name}</div>
-              <div style={{fontSize:22,fontWeight:900,color:p.coins>=100?'#00ff88':p.coins===0?'#ff3344':'#ffd700'}}>{p.coins}<span style={{fontSize:14,color:'#888'}}>枚</span></div>
+        <div style={{fontSize:11,color:'#333',letterSpacing:6,marginBottom:2}}>● ● ●</div>
+        <div style={{fontSize:28,fontWeight:900,color:'#ff1493',letterSpacing:5,animation:'neonPulse 1.2s ease-in-out infinite',marginBottom:10}}>
+          RESULT
+        </div>
+        <div style={{width:'100%',maxWidth:340,display:'flex',flexDirection:'column',gap:8}}>
+          {gameOverData.map((p,i)=>(
+            <div key={p.id} style={{
+              display:'flex',alignItems:'center',gap:14,
+              padding:'16px 20px',
+              background:i===0?'rgba(255,20,147,0.09)':'rgba(255,255,255,0.03)',
+              borderRadius:16,
+              border:i===0?'1px solid rgba(255,20,147,0.35)':'1px solid rgba(255,255,255,0.055)',
+              animation:`slideUp 0.4s ease-out ${i*0.1}s both`,
+            }}>
+              <div style={{fontSize:i===0?28:18,minWidth:34,textAlign:'center'}}>
+                {i===0?'🏆':i===1?'🥈':i===2?'🥉':`${i+1}`}
+              </div>
+              <div style={{flex:1,fontSize:16,color:i===0?'#fff':'#666',fontWeight:i===0?900:400,letterSpacing:0.5}}>
+                {p.name}
+              </div>
+              <div style={{fontSize:21,fontWeight:900,color:p.coins>=100?'#00ee77':p.coins===0?'#ff3344':'#ffd700'}}>
+                {p.coins}<span style={{fontSize:11,color:'#444',marginLeft:3}}>枚</span>
+              </div>
             </div>
           ))}
         </div>
-        <button onClick={onGameOver} style={ROLL_BTN}>BACK</button>
+        <button onClick={onGameOver} style={{...ROLL_BTN,marginTop:10,letterSpacing:5,fontSize:15}}>LOBBY</button>
       </div>
     );
   }
 
-  // ── MAIN ─────────────────────────────
+  // ── MAIN ───────────────────────────────────────────────────
   return (
-    <div style={{height:'100dvh',display:'flex',flexDirection:'column',background:'#0a0a0f',overflow:'hidden',position:'relative'}}>
+    <div
+      style={{height:'100dvh',display:'flex',flexDirection:'column',background:'#0a0a0f',overflow:'hidden',position:'relative',cursor:canTap?'pointer':'default',touchAction:'none'}}
+      onPointerDown={canTap ? handleScreenTap : undefined}
+    >
       <style>{CSS}</style>
       <ShonbenOverlay name={shonbenName} />
 
       {pinzoroBlast && (
-        <div style={{position:'fixed',inset:0,zIndex:300,pointerEvents:'none',background:'radial-gradient(circle at center,rgba(255,20,147,0.8) 0%,rgba(255,20,147,0.2) 55%,transparent 80%)',animation:'screenBlast 0.75s ease-out forwards',display:'flex',alignItems:'center',justifyContent:'center'}}>
-          <div style={{fontSize:86,fontWeight:900,color:'#fff',textShadow:'0 0 60px #ff1493',animation:'neonPulse 0.3s ease-in-out infinite',letterSpacing:6}}>ピンゾロ</div>
+        <div style={{position:'fixed',inset:0,zIndex:300,pointerEvents:'none',background:'radial-gradient(circle at center,rgba(255,20,147,0.72) 0%,rgba(255,20,147,0.12) 55%,transparent 80%)',animation:'screenBlast 0.85s ease-out forwards',display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <div style={{fontSize:76,fontWeight:900,color:'#fff',textShadow:'0 0 60px #ff1493',animation:'neonPulse 0.3s ease-in-out infinite',letterSpacing:6}}>ピンゾロ</div>
         </div>
       )}
 
-      {/* ヘッダー */}
-      <div style={{padding:'6px 12px',background:'rgba(0,0,0,0.9)',borderBottom:'1px solid rgba(255,20,147,0.2)',display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
-        <div style={{fontSize:13,fontWeight:900,color:'#ff1493',whiteSpace:'nowrap'}}>第{round}局</div>
+      {/* Tap ripples */}
+      <div style={{position:'absolute',inset:0,pointerEvents:'none',overflow:'hidden',zIndex:5}}>
+        {ripples.map(r=>(
+          <div key={r.id} style={{position:'absolute',left:r.x,top:r.y,width:36,height:36,marginLeft:-18,marginTop:-18,borderRadius:'50%',border:'2px solid rgba(255,20,147,0.5)',animation:'ripple 0.55s ease-out forwards'}} />
+        ))}
+      </div>
+
+      {/* Header */}
+      <div style={{padding:'8px 14px',background:'linear-gradient(180deg,rgba(0,0,0,0.96) 0%,rgba(8,8,14,0.92) 100%)',borderBottom:'1px solid rgba(255,20,147,0.1)',display:'flex',alignItems:'center',gap:8,flexShrink:0,zIndex:10}}>
+        <div style={{fontSize:11,fontWeight:900,color:'#ff1493',letterSpacing:2,whiteSpace:'nowrap'}}>第{round}局</div>
         <div style={{flex:1,display:'flex',gap:3,justifyContent:'center',flexWrap:'wrap'}}>
-          {sorted.map(p => (
-            <span key={p.id} style={{fontSize:10,color:p.id===myId?'#ff1493':'#aaa',background:p.id===oyaId?'rgba(255,165,0,0.15)':p.id===myId?'rgba(255,20,147,0.1)':'rgba(255,255,255,0.05)',border:p.id===oyaId?'1px solid rgba(255,165,0,0.35)':p.id===myId?'1px solid rgba(255,20,147,0.3)':'1px solid transparent',padding:'2px 6px',borderRadius:5,fontWeight:p.id===myId?'bold':'normal'}}>
-              {p.id===oyaId?'🎲':''}{p.name} {p.coins}
+          {sorted.map(p=>(
+            <span key={p.id} style={{
+              fontSize:10,
+              color:p.id===myId?'#ff1493':'#444',
+              background:p.id===oyaId?'rgba(255,160,0,0.11)':p.id===myId?'rgba(255,20,147,0.09)':'rgba(255,255,255,0.035)',
+              border:p.id===oyaId?'1px solid rgba(255,160,0,0.28)':p.id===myId?'1px solid rgba(255,20,147,0.22)':'1px solid rgba(255,255,255,0.04)',
+              padding:'3px 8px',borderRadius:6,fontWeight:p.id===myId?700:400,letterSpacing:0.3,
+            }}>
+              {p.id===oyaId?'🎲 ':''}{p.name} {p.coins}
             </span>
           ))}
         </div>
-        <div style={{fontSize:10,color:'#444',whiteSpace:'nowrap'}}>{isOya?'🎲親':`親:${oya?.name||''}`}</div>
+        <div style={{fontSize:10,color:'#2a2a2a',whiteSpace:'nowrap',letterSpacing:1}}>{isOya?'親':'子'}</div>
       </div>
 
       {/* どんぶりエリア */}
-      <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'8px 0',position:'relative',overflow:'hidden'}}>
+      <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'10px 0',position:'relative',overflow:'hidden',pointerEvents:'none'}}>
 
-        {/* 誰の出目か */}
-        {revealStep >= 1 && bowlWho && (
-          <div style={{fontSize:11,color: bowlKey===oyaId?'#ff9500':'#888',letterSpacing:3,marginBottom:10,fontWeight:900,animation:'slideUp 0.3s ease-out'}}>
+        {revealStep>=1 && bowlWho && (
+          <div style={{fontSize:10,letterSpacing:4,marginBottom:12,fontWeight:700,color:bowlKey===oyaId?'#ff9500':'#444',animation:'slideUp 0.3s ease-out'}}>
             {bowlKey===oyaId?'🎲 OYA':'●'} — {bowlWho}
           </div>
         )}
 
-        {/* どんぶり本体 */}
-        <Donburi
-          diceState={diceRender}
-          glowColor={bowlGlow}
-          shaking={bowlShaking}
-          onPress={handleRoll}
-          interactive={isHost && phase === 'betting'}
-          showHint={diceRender.length === 0}
-        />
+        <div ref={bowlRef}>
+          <Donburi
+            diceState={diceRender}
+            glowColor={bowlGlow}
+            shaking={bowlShaking}
+            isEscaping={isEscaping}
+          />
+        </div>
 
-        {/* 役ラベル */}
-        {bowlLabel && revealStep >= 1 && (
-          <div style={{marginTop:14,animation:'impactIn 0.4s ease-out'}}>
+        {bowlLabel && revealStep>=1 && (
+          <div style={{marginTop:16,animation:'impactIn 0.4s ease-out'}}>
             <ResultLabel label={bowlLabel} />
           </div>
         )}
 
-        {/* 子の結果リスト (result phase) */}
-        {phase === 'result' && roundResult && revealStep >= 1 && (
-          <div style={{width:'100%',maxWidth:340,padding:'0 14px',marginTop:12}}>
-            {/* OYA row */}
-            <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 12px',background:'rgba(255,165,0,0.07)',borderRadius:8,border:'1px solid rgba(255,165,0,0.2)',marginBottom:5,animation:'slideUp 0.3s ease-out'}}>
-              <span style={{fontSize:11,color:'#ff9500',fontWeight:900,minWidth:60}}>🎲 {roundResult.oyaName}</span>
-              <span style={{fontSize:11,color:'#555',flex:1}}>{roundResult.oyaResult.label}</span>
+        {/* Result list */}
+        {phase==='result' && roundResult && revealStep>=1 && (
+          <div style={{width:'100%',maxWidth:320,padding:'0 14px',marginTop:14,pointerEvents:'auto'}}>
+            <div
+              onClick={()=>{ setBowlKey('oya'); showDiceStatic(roundResult.oyaDice); }}
+              style={{display:'flex',alignItems:'center',gap:8,padding:'9px 14px',background:'rgba(255,160,0,0.05)',borderRadius:10,border:'1px solid rgba(255,160,0,0.14)',marginBottom:6,animation:'slideUp 0.3s ease-out',cursor:'pointer'}}
+            >
+              <span style={{fontSize:10,color:'#ff9500',fontWeight:700,minWidth:52,letterSpacing:0.5}}>🎲 {roundResult.oyaName}</span>
+              <span style={{fontSize:10,color:'#3a3a3a',flex:1,letterSpacing:0.5}}>{roundResult.oyaResult.label}</span>
             </div>
-            {/* KO rows */}
-            {roundResult.battles.slice(0, revealStep - 1).map((b, i) => {
-              const win = b.outcome==='win', draw = b.outcome==='draw';
-              const isMe = b.playerId === myId;
+            {roundResult.battles.slice(0,revealStep-1).map((b,i)=>{
+              const win=b.outcome==='win', draw=b.outcome==='draw';
+              const isMe=b.playerId===myId;
               return (
-                <div key={b.playerId} onClick={() => setBowlKey(b.playerId)} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 12px',background:win?'rgba(0,255,136,0.06)':draw?'rgba(255,255,255,0.03)':'rgba(255,51,68,0.07)',borderRadius:8,border:`1px solid ${win?'rgba(0,255,136,0.3)':draw?'rgba(255,255,255,0.06)':'rgba(255,51,68,0.28)'}`,marginBottom:5,animation:`slideUp 0.3s ease-out ${i*0.08}s both`,cursor:'pointer'}}>
-                  <span style={{fontSize:11,color:isMe?'#ff1493':'#888',fontWeight:isMe?'bold':'normal',minWidth:60}}>{isMe?'● ':''}{b.playerName}</span>
-                  <span style={{fontSize:11,color:'#444',flex:1}}>{b.result.label}</span>
-                  <span style={{fontSize:14,fontWeight:900,color:win?'#00ff88':draw?'#444':'#ff3344',animation:'slideRight 0.3s ease-out'}}>
+                <div key={b.playerId}
+                  onClick={()=>{ setBowlKey(b.playerId); showDiceStatic(b.dice); }}
+                  style={{
+                    display:'flex',alignItems:'center',gap:8,
+                    padding:'9px 14px',
+                    background:win?'rgba(0,238,119,0.045)':draw?'rgba(255,255,255,0.025)':'rgba(255,51,68,0.055)',
+                    borderRadius:10,
+                    border:`1px solid ${win?'rgba(0,238,119,0.2)':draw?'rgba(255,255,255,0.045)':'rgba(255,51,68,0.2)'}`,
+                    marginBottom:5,
+                    animation:`slideUp 0.3s ease-out ${i*0.07}s both`,
+                    cursor:'pointer',
+                  }}
+                >
+                  <span style={{fontSize:10,color:isMe?'#ff1493':'#444',fontWeight:isMe?700:400,minWidth:52,letterSpacing:0.5}}>{b.playerName}</span>
+                  <span style={{fontSize:10,color:'#2e2e2e',flex:1,letterSpacing:0.5}}>{b.result.label}</span>
+                  <span style={{fontSize:15,fontWeight:900,color:win?'#00ee77':draw?'#2e2e2e':'#ff3344',animation:'slideRight 0.3s ease-out',minWidth:38,textAlign:'right'}}>
                     {win?`+${Math.abs(b.coinChange)}`:draw?'±0':b.coinChange}
                   </span>
                 </div>
@@ -589,37 +714,51 @@ export default function GameScreen({ roomInfo, initialState, onGameOver }) {
         )}
       </div>
 
-      {/* ── ボトムパネル ── */}
-      <div style={{padding:'10px 14px 18px',background:'rgba(0,0,0,0.92)',borderTop:'1px solid rgba(255,255,255,0.05)',flexShrink:0}}>
+      {/* Bottom panel */}
+      <div style={{
+        padding:'12px 16px 22px',
+        background:'linear-gradient(0deg,rgba(0,0,0,0.98) 0%,rgba(8,8,14,0.94) 100%)',
+        borderTop:'1px solid rgba(255,255,255,0.035)',
+        flexShrink:0, zIndex:10, pointerEvents:'auto',
+      }}>
 
-        {/* BETTING */}
-        {phase === 'betting' && (
+        {phase==='betting' && (
           <div style={{animation:'slideUp 0.25s ease-out'}}>
-            {/* コイン表示 */}
-            <div style={{display:'flex',alignItems:'baseline',gap:6,marginBottom:10}}>
-              <span style={{fontSize:11,color:'#444',letterSpacing:2}}>COINS</span>
-              <span style={{fontSize:28,fontWeight:900,color:'#ff1493',textShadow:'0 0 20px rgba(255,20,147,0.3)'}}>{myCoins}</span>
+            {/* Coins row */}
+            <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:12}}>
+              <span style={{fontSize:10,color:'#2a2a2a',letterSpacing:3}}>COINS</span>
+              <span style={{fontSize:34,fontWeight:900,color:'#ff1493',textShadow:'0 0 20px rgba(255,20,147,0.22)',lineHeight:1}}>{myCoins}</span>
               <span style={{flex:1}}/>
               {!isOya && <>
-                <span style={{fontSize:11,color:'#444',letterSpacing:2}}>BET</span>
-                <span style={{fontSize:28,fontWeight:900,color:'#ffd700'}}>{myBet}</span>
+                <span style={{fontSize:10,color:'#2a2a2a',letterSpacing:3}}>BET</span>
+                <span style={{fontSize:34,fontWeight:900,color:'#ffd700',lineHeight:1}}>{myBet}</span>
               </>}
             </div>
 
             {!isOya && (
               <>
-                <input type="range" min={1} max={myCoins} value={myBet} onChange={e=>sendBet(Number(e.target.value))} style={{width:'100%',accentColor:'#ff1493',marginBottom:8}} />
-                <div style={{display:'flex',gap:5,marginBottom:10}}>
+                <input
+                  type="range" min={1} max={myCoins} value={myBet}
+                  onChange={e=>sendBet(Number(e.target.value))}
+                  onPointerDown={e=>e.stopPropagation()}
+                  style={{width:'100%',accentColor:'#ff1493',marginBottom:10}}
+                />
+                <div style={{display:'flex',gap:6,marginBottom:10}}>
                   {[10,25,50].map(v=>(
-                    <button key={v} onPointerDown={()=>sendBet(v)} style={{...SM_BTN,flex:1}}>{v}</button>
+                    <button key={v}
+                      onPointerDown={e=>{e.stopPropagation();sendBet(v);}}
+                      style={{...SM_BTN,flex:1}}
+                    >{v}</button>
                   ))}
-                  <button onPointerDown={()=>sendBet(myCoins)} style={{...SM_BTN,flex:1,color:'#ff3344',borderColor:'rgba(255,51,68,0.4)'}}>ALL IN</button>
+                  <button
+                    onPointerDown={e=>{e.stopPropagation();sendBet(myCoins);}}
+                    style={{...SM_BTN,flex:1,color:'#ee3344',borderColor:'rgba(238,51,68,0.32)',background:'rgba(238,51,68,0.07)'}}
+                  >ALL</button>
                 </div>
-                {/* 他プレイヤーBET */}
-                <div style={{display:'flex',gap:5,marginBottom:10,flexWrap:'wrap'}}>
+                <div style={{display:'flex',gap:4,marginBottom:12,flexWrap:'wrap'}}>
                   {players.filter(p=>p.id!==oyaId).map(p=>(
-                    <span key={p.id} style={{fontSize:10,color:p.id===myId?'#ffd700':'#444',background:'rgba(255,255,255,0.03)',padding:'2px 8px',borderRadius:5}}>
-                      {p.name} {p.bet}
+                    <span key={p.id} style={{fontSize:10,color:p.id===myId?'#ffd700':'#2a2a2a',background:'rgba(255,255,255,0.025)',padding:'3px 9px',borderRadius:6,border:'1px solid rgba(255,255,255,0.04)'}}>
+                      {p.name} <span style={{color:'#666'}}>{p.bet}</span>
                     </span>
                   ))}
                 </div>
@@ -627,40 +766,46 @@ export default function GameScreen({ roomInfo, initialState, onGameOver }) {
             )}
 
             {isOya && (
-              <div style={{textAlign:'center',padding:'8px 0',color:'#ff9500',fontSize:13,marginBottom:8,letterSpacing:1}}>
-                全員の賭けを受けます
-              </div>
+              <div style={{fontSize:11,color:'#2e2e2e',letterSpacing:2,marginBottom:14,textAlign:'center'}}>全員の賭けを受けます</div>
             )}
 
+            {/* Tap hint or waiting */}
             {isHost ? (
-              <button onPointerDown={handleRoll} style={ROLL_BTN}>
-                🎲 ROLL !!
-              </button>
+              <div style={{textAlign:'center',animation:'tapHint 1.8s ease-in-out infinite',pointerEvents:'none',padding:'6px 0'}}>
+                <div style={{fontSize:12,color:'#ff1493',letterSpacing:5,textShadow:'0 0 14px rgba(255,20,147,0.35)',fontWeight:700}}>
+                  どこでもタップ
+                </div>
+                <div style={{fontSize:9,color:'#222',letterSpacing:4,marginTop:5}}>TAP ANYWHERE TO ROLL</div>
+              </div>
             ) : (
-              <div style={{textAlign:'center',color:'#2a2a2a',fontSize:12,letterSpacing:3,padding:'8px 0'}}>
-                ホストのROLLを待っています…
+              <div style={{textAlign:'center',color:'#1e1e1e',fontSize:10,letterSpacing:4,padding:'8px 0'}}>
+                ホストのロールを待っています…
               </div>
             )}
           </div>
         )}
 
-        {/* ROLLING */}
-        {phase === 'rolling' && (
-          <div style={{textAlign:'center',padding:'10px 0',color:'#2a2a2a',letterSpacing:3,fontSize:12}}>
-            {revealStep === 0 ? 'ROLLING…' : '確認中…'}
+        {phase==='rolling' && (
+          <div style={{textAlign:'center',padding:'14px 0',color:'#1a1a1a',letterSpacing:5,fontSize:10}}>
+            {revealStep===0?'ROLLING…':'確認中…'}
           </div>
         )}
 
-        {/* RESULT */}
-        {phase === 'result' && (
+        {phase==='result' && (
           <div style={{animation:'slideUp 0.25s ease-out'}}>
             {isHost ? (
               <div style={{display:'flex',gap:8}}>
-                <button onPointerDown={()=>socket.emit('round:next')} style={{...ROLL_BTN,letterSpacing:3,fontSize:18}}>NEXT ▶</button>
-                <button onPointerDown={()=>socket.emit('game:end')} style={{padding:'14px',fontSize:12,borderRadius:12,border:'1px solid rgba(255,255,255,0.07)',background:'transparent',color:'#333',cursor:'pointer'}}>END</button>
+                <button
+                  onPointerDown={e=>{e.stopPropagation();socket.emit('round:next');}}
+                  style={{...ROLL_BTN,flex:1,fontSize:16,letterSpacing:4}}
+                >NEXT ▶</button>
+                <button
+                  onPointerDown={e=>{e.stopPropagation();socket.emit('game:end');}}
+                  style={{padding:'14px 16px',fontSize:10,borderRadius:12,border:'1px solid rgba(255,255,255,0.055)',background:'transparent',color:'#222',cursor:'pointer',letterSpacing:2}}
+                >END</button>
               </div>
             ) : (
-              <div style={{textAlign:'center',color:'#2a2a2a',fontSize:12,letterSpacing:3,padding:'8px 0'}}>WAITING NEXT…</div>
+              <div style={{textAlign:'center',color:'#1a1a1a',fontSize:10,letterSpacing:4,padding:'8px 0'}}>WAITING NEXT…</div>
             )}
           </div>
         )}
@@ -670,14 +815,14 @@ export default function GameScreen({ roomInfo, initialState, onGameOver }) {
 }
 
 const ROLL_BTN = {
-  width:'100%', padding:'15px', fontSize:22, fontWeight:900,
-  borderRadius:14, border:'2px solid #ff1493', cursor:'pointer',
-  background:'rgba(255,20,147,0.15)', color:'#ff1493', letterSpacing:4,
-  boxShadow:'0 0 24px rgba(255,20,147,0.35)',
-  textShadow:'0 0 12px rgba(255,20,147,0.8)',
+  width:'100%', padding:'15px', fontSize:17, fontWeight:900,
+  borderRadius:13, border:'1px solid rgba(255,20,147,0.45)', cursor:'pointer',
+  background:'rgba(255,20,147,0.09)', color:'#ff1493', letterSpacing:3,
+  boxShadow:'0 0 18px rgba(255,20,147,0.18)',
+  textShadow:'0 0 10px rgba(255,20,147,0.55)',
 };
 const SM_BTN = {
-  padding:'8px', fontSize:13, fontWeight:'bold', borderRadius:8,
-  border:'1px solid rgba(255,20,147,0.35)', background:'rgba(255,20,147,0.08)',
-  color:'#ff1493', cursor:'pointer',
+  padding:'11px 0', fontSize:13, fontWeight:700, borderRadius:10,
+  border:'1px solid rgba(255,20,147,0.28)', background:'rgba(255,20,147,0.065)',
+  color:'#ff1493', cursor:'pointer', letterSpacing:1,
 };
