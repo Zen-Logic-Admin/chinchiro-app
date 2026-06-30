@@ -4,12 +4,12 @@ import { socket } from '../socket.js';
 const BOWL_R      = 130;
 const DIE_S       = 52;
 const DIE_R       = DIE_S * 0.48;
-const GRAVITY     = 0.92;   // 強め
-const RESTITUTION = 0.36;   // 壁でエネルギーをほぼ失う
-const FRICTION    = 0.94;   // 空気抵抗強め
-const SPIN_DECAY  = 0.86;   // 回転はすぐ落ち着く
-const SETTLE_V    = 1.6;    // 早めに静止
-const SETTLE_W    = 0.07;
+const SPRING_K    = 0.003;  // 中心引力（どんぶりの傾き模倣）
+const RESTITUTION = 0.55;   // 壁反発
+const FRICTION    = 0.976;  // 空気抵抗
+const SPIN_DECAY  = 0.88;
+const SETTLE_V    = 0.8;
+const SETTLE_W    = 0.05;
 
 function rand(a, b) { return a + Math.random() * (b - a); }
 
@@ -275,7 +275,9 @@ export default function GameScreen({ roomInfo, initialState, onGameOver }) {
       if (d.settled) continue;
       allDone = false;
 
-      d.vy += GRAVITY;
+      // 中心方向への引力（どんぶりの底に向かって転がる感じ）
+      d.vx -= d.x * SPRING_K;
+      d.vy -= d.y * SPRING_K;
       d.x  += d.vx; d.y += d.vy;
       d.angle += d.omega;
       d.vx *= FRICTION; d.vy *= FRICTION; d.omega *= SPIN_DECAY;
@@ -320,10 +322,12 @@ export default function GameScreen({ roomInfo, initialState, onGameOver }) {
             const dd=Math.sqrt(d2), nx=dx/dd, ny=dy/dd, ov=(minD-dd)*0.5;
             a.x-=nx*ov; a.y-=ny*ov; b.x+=nx*ov; b.y+=ny*ov;
             const dvx=a.vx-b.vx, dvy=a.vy-b.vy, dot=dvx*nx+dvy*ny;
-            a.vx-=dot*nx*RESTITUTION; a.vy-=dot*ny*RESTITUTION;
-            b.vx+=dot*nx*RESTITUTION; b.vy+=dot*ny*RESTITUTION;
-            // サイコロ同士が当たったときも目が変わる
-            if (Math.abs(dot) > 1.5) { a.face=Math.ceil(Math.random()*6); b.face=Math.ceil(Math.random()*6); }
+            // dot > 0 = 接近中のときだけ解決（離れてるのに引き合うバグ防止）
+            if (dot > 0) {
+              a.vx-=dot*nx*RESTITUTION; a.vy-=dot*ny*RESTITUTION;
+              b.vx+=dot*nx*RESTITUTION; b.vy+=dot*ny*RESTITUTION;
+              if (Math.abs(dot) > 1.5) { a.face=Math.ceil(Math.random()*6); b.face=Math.ceil(Math.random()*6); }
+            }
           }
         }
       }
@@ -352,7 +356,7 @@ export default function GameScreen({ roomInfo, initialState, onGameOver }) {
       const spread = (i-1)*0.48;
       const toward = Math.atan2(-sy, -sx);
       const ang = toward + spread + rand(-0.28, 0.28);
-      const spd = rand(14, 22);
+      const spd = rand(11, 18);
       return {
         x:sx+rand(-6,6), y:sy+rand(-6,6),
         vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd,
@@ -384,7 +388,7 @@ export default function GameScreen({ roomInfo, initialState, onGameOver }) {
     const baseAngle = rand(0, Math.PI*2);
     dicePhys.current = dicePhys.current.map((d,i) => {
       const a = baseAngle + (i/3)*Math.PI*2 + rand(-0.25,0.25);
-      const spd = rand(14, 22);
+      const spd = rand(11, 18);
       return { ...d, settled:false, escaped:false, vx:Math.cos(a)*spd, vy:Math.sin(a)*spd-3, omega:rand(-0.8,0.8) };
     });
     setDiceRender(dicePhys.current.map(d=>({...d})));
